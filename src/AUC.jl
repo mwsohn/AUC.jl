@@ -3,7 +3,7 @@ module AUC
 
 include("auc_functions.jl")
 
-export roc_auc_score
+export auc, ROC 
 
 # package code goes here
 

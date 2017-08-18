@@ -11,10 +11,14 @@ res = auc(y, y_score)
 
 
 res2 = AUC._auc(y, y_score, reorder = true)
-
 @test isequal(res2, 0.44999999999999996)
 
-res3 = AUC._auc(y, y_score,reorder = false)         # should throw error
+try
+    res3 = AUC._auc(y, y_score, reorder = false)         # should throw error
+catch
+    info("error thrown from re-ordering turned off above")
+end
+
 
 res4 = auc(randn(25), rand(25))
 @test res4 == -Inf

@@ -13,3 +13,8 @@ res = auc(y, y_score)
 res2 = AUC._auc(y, y_score, reorder = true)
 
 @test isequal(res2, 0.44999999999999996)
+
+res3 = AUC._auc(y, y_score,reorder = false)         # should throw error
+
+res4 = auc(randn(25), rand(25))
+@test res4 == -Inf

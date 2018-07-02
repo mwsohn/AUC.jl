@@ -52,14 +52,14 @@ julia> hcat(a[order], b[order]
 # end
 
 
-# function findrange(v,start,len)
-#     @inbounds for i=start:len-1
-#         if v[i] != v[i+1]
-#             return i
-#         end
-#     end
-#     return len
-# end
+function findrange(v,start,len)
+    @inbounds for i=start:len-1
+        if v[i] != v[i+1]
+            return i
+        end
+    end
+    return len
+end
 
 function ident_range(v)
     i = 1

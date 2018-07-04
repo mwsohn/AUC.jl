@@ -52,71 +52,58 @@ julia> hcat(a[order], b[order]
 # end
 
 
-function findrange(v,start,len)
-    @inbounds for i=start:len-1
-        if v[i] != v[i+1]
-            return i
-        end
+function sortperm2(x, y; rev=false)
+    n = length(x)
+    if n != length(y)
+        error("two input vectors are not the same length")
     end
-    return len
-end
+    lev = sort(collect(Set(x)))
 
-function ident_range(v)
-    i = 1
-    vlen = length(v)
-    tvec = Vector()
-    @inbounds while i < vlen
-        if v[i] != v[i+1]
-            i += 1
-            continue
-        end
-        
-        # find the range of identifical values
-        iend = findrange(v,i,vlen)
-        if iend > i
-            push!(tvec,(i,iend))
-        end
-        i = iend + 1
-    end
-    return tvec
-end
-
-function sortperm2(x, y; rev = false)
-   n = length(x)
-   no_ties = n == length(Set(x))
-   if no_ties
-       return sortperm(x, rev = rev)
-   end
-
-   ord1 = sortperm(x, rev = rev)
-   x_sorted = x[ord1]
-   y_sorted = y[ord1]
-
-   # ranges of x_sorted that are tied
-   # we will sort ord1 by y_sorted
-   trng = ident_range(x_sorted)
-   @inbounds for t in trng
-       ord2 = sortperm(y_sorted[t[1]:t[2]],rev = rev)
-       ord1[t[1]:t[2]] = ord1[t[1]:t[2]][ord2]
+    # no ties
+    if n == length(lev)
+        return sortperm(x, rev = rev)
     end
 
-   ord1
+    ord1 = sortperm(x, rev = rev)
+    x_sorted = x[ord1]
+    y_sorted = y[ord1]
+
+    # ranges of x_sorted that are tied
+    # we will sort ord1 by y_sorted
+    f = 1
+    @inbounds for val in lev
+        l = findlast(x_sorted[f:end],val) + f - 1
+        ord2 = sortperm(y_sorted[f:l],rev = rev)
+        ord1[f:l] = ord1[f:l][ord2]
+        f = l + 1
+     end
+
+    ord1
+
 end
 
-
-# tst1 = sortperm2(k,c) # old version
-# tst2 = sortperm3(k,c) # new version, now renamed to sortperm2
-
-# using Base.Test
-# @test isequal(tst1,tst2)
-
-# using Distributions, BenchmarkTools
-# c = rand(Uniform(0,1),1000)
-# k = [x > .5 ? 1 : 0 for x in c]
-
-# @benchmark sortperm2(k,c) -> mean time: 2.680 s
-# @benchmark sortperm3(k,c) -> mean time: 71.548 μs 
-
+# In tests below, sortperm3 is the new sortperm2
+# a = [1, 5, 1, 4, 3, 4, 4, 3, 1, 4, 5, 3, 5]
+# b = [9, 4, 0, 4, 0, 2, 1, 2, 1, 3, 2, 1, 1]
+#
+# sortperm2(a,b) == sortperm3(a,b) -> true
+#
+# using BenchmarkTools
+#
+# @benchmark sortperm2(a,b) -> mean time: 7.7 μs
+# @benchmark sortperm3(a,b) -> mean time: 5.5 μs
+#
+# For binary variable and its predicted values as in logistic regressions
+# sortperm3 performs well, while sortperm2 is very slow with a sample > 1000
+#
+# using Distributions
+#
+# prob = rand(Distributions.Uniform(0,1),1000)
+# obs = prob .> .5
+#
+# @benchmark sortperm2(obs,prob) -> mean time: 1.084 sec
+# @benchmark sortperm3(obs,prob) -> mean time: 160.895 μs
+#
 
 # a = [1, 5, 1, 4, 3, 4, 4, 3, 1, 4, 5, 3, 5]
 # b = [9, 4, 0, 4, 0, 2, 1, 2, 1, 3, 2, 1, 1]

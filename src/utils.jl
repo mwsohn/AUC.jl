@@ -1,4 +1,3 @@
-
 """
 Given 2 vectors, `x` and `y`, this function returns the indices that
 sort the elements by `x`, with `y` breaking ties. See the example below.
@@ -18,92 +17,180 @@ julia> hcat(a[order], b[order]
  2  0
  2  3
  3  1
- """
-# function sortperm2(x, y; rev = false)
-#     n = length(x)
-#     no_ties = n == length(Set(x))
-#     if no_ties
-#         res = sortperm(x, rev = rev)
-#     else
-#         ord1 = sortperm(x, rev = rev)
-#         x_sorted = x[ord1]
-#         i = 1
-#         while i < n
+"""
 
-#             # println("x_i is $(x_sorted[i]) and x_(i+1) is $(x_sorted[i+1])")
-#             if x_sorted[i] == x_sorted[i+1]
-#                 if rev && y[ord1][i] < y[ord1][i+1]
-#                     #println("(1.) Switching $(y[ord1][i]) with $(y[ord1][i+1])")
-#                     ord1[i], ord1[i+1] = ord1[i+1], ord1[i]
-#                     i = i > 1 ? i - 1 : i
-#                     continue
-#                 elseif !rev && y[ord1][i] > y[ord1][i+1]
-#                     #println("(2.) Switching $(y[ord1][i]) with $(y[ord1][i+1])")
-#                     ord1[i], ord1[i+1] = ord1[i+1], ord1[i]
-#                     i = i > 1 ? i - 1 : i
-#                     continue
-#                 end
-#             end
-#             i += 1
-#         end
-#         res = ord1
-#     end
-#     res
-# end
+using SortingAlgorithms
 
+function sortperm2(x,y;rev=false,alg=RadixSort)
 
-function sortperm2(x, y; rev=false)
     n = length(x)
-    if n != length(y)
-        error("two input vectors are not the same length")
+
+    # find the number of elements from the first 100 in x
+    if n < 10000
+        nlev = length(unique(x))
+    else
+        nlev = length(unique(x[1:10000]))
+        # if nlev < 1000
+        #     nlev = length(unique(x))
+        # end
     end
-    lev = sort(collect(Set(x)))
 
-    # no ties
-    if n == length(lev)
-        return sortperm(x, rev = rev)
+    if nlev == 2 # binary
+        return _sortperm2b(x,y;rev=rev,alg=alg)
     end
 
-    ord1 = sortperm(x, rev = rev)
-    x_sorted = x[ord1]
-    y_sorted = y[ord1]
+    if nlev < 1000
+        return _sortperm2c(x,y;rev=rev,alg=alg)
+    end
 
-    # ranges of x_sorted that are tied
-    # we will sort ord1 by y_sorted
-    f = 1
-    @inbounds for val in lev
-        l = findlast(x_sorted[f:end],val) + f - 1
-        ord2 = sortperm(y_sorted[f:l],rev = rev)
-        ord1[f:l] = ord1[f:l][ord2]
-        f = l + 1
-     end
-
-    ord1
-
+    return _sortperm2d(x,y;rev=rev) # Use QuickSort
 end
 
-# In tests below, sortperm3 is the new sortperm2
-# a = [1, 5, 1, 4, 3, 4, 4, 3, 1, 4, 5, 3, 5]
-# b = [9, 4, 0, 4, 0, 2, 1, 2, 1, 3, 2, 1, 1]
+# x is binary
+function _sortperm2b(x,y;rev=false,alg=RadixSort)
+
+    n = length(x)
+
+    # levels
+    lev = sort(unique(x),rev=rev)
+
+    # range
+    idx = 1:n
+
+    # allocate memory
+    ord = Vector{Int}(undef,n)
+
+    f = 1
+    @inbounds @simd for val in lev
+        @inbounds ba = x .== val
+        len = count(ba)
+        @inbounds ord[f:f+len-1] = fsortperm2(idx[ba],y[ba],rev=rev,alg=alg)
+        f += len
+    end
+
+    return ord
+end
+
+# x is discrete with 3 - 999 levels
+function _sortperm2c(x,y;rev=false,alg=RadixSort)
+    # levels
+    len = length(x)
+
+    # from FreqTables.jl/src/freqtable.jl
+    d = Dict{eltype(x),Int64}()
+    @inbounds @simd for i = 1:len
+        index = Base.ht_keyindex(d, x[i])
+
+        if index > 0
+            @inbounds d.vals[index] += 1
+        else
+            @inbounds d[x[i]] = 1
+        end
+    end
+
+    # construct labels
+    alev = sort(collect(keys(d)),rev=rev)
+
+    cnt = Vector{Int64}(undef,length(alev))
+    @inbounds @simd for i=1:length(alev)
+        cnt[i] = d[alev[i]]
+    end
+
+    # permutation sort on x
+    ord = sortperm(x,alg=alg,rev=rev)
+    y_sorted = y[ord]
+
+    f = 1
+    for i = 1:length(cnt)
+        l = f+cnt[i]-1
+        ord[f:l] = ord[f:l][sortperm(y_sorted[f:l],rev=rev,alg=alg)]
+        f = l + 1
+    end
+
+    return ord
+end
+
+# other arrays
+function _sortperm2d(x,y;rev=false,alg=QuickSort)
+
+    # combine index, x, and y using tuples
+    # A is an array of tuples
+    A = tuple.(1:length(x),x,y)
+
+    # sort A by second and then third elements
+    sort!(A,by=x->(x[2],x[3]),alg=alg,rev=rev)
+
+    # return the first element in tuples
+    return [x[1] for x in A]
+end
+
+function fsortperm2(idx,y;rev=false,alg=RadixSort)
+    return first.(sort(Pair.(idx,y), by=x->x.second, alg=alg, rev=rev))
+end
+
+
+# #----------------------------------------
+# # performance tests
+# using BenchmarkTools, Distributions
+# aa = rand(Uniform(0,1),1000000)
 #
-# sortperm2(a,b) == sortperm3(a,b) -> true
+# #----------------------------------------
+# # Test sortperm2 under various conditions
+# # binary integer
+# bb = Int64.(aa .> .5)
+# @btime sortperm2(bb,aa) # 78.780 ms
 #
-# using BenchmarkTools
+# # binary float
+# bb = round.(rand(Uniform(0,1),1000000))
+# @btime sortperm2(bb,aa) # 80.660 ms
 #
-# @benchmark sortperm2(a,b) -> mean time: 7.7 μs
-# @benchmark sortperm3(a,b) -> mean time: 5.5 μs
+# # discrete values 3 level integers
+# bb = floor.(Int,rand(Uniform(1,4),1000000))
+# @btime sortperm2(bb,aa) # 65.300 ms
 #
-# For binary variable and its predicted values as in logistic regressions
-# sortperm3 performs well, while sortperm2 is very slow with a sample > 1000
+# # discrete values 3 level floats
+# bb = round.(rand(Uniform(1,3),1000000))
+# @btime sortperm2(bb,aa) # 88.661
 #
-# using Distributions
+# # discrete values 5 level integers
+# bb = floor.(Int,rand(Uniform(1,6),1000000))
+# @btime sortperm2(bb,aa) # 62.945 ms
 #
-# prob = rand(Distributions.Uniform(0,1),1000)
-# obs = prob .> .5
+# # discrete values 5 level floats
+# bb = round.(rand(Uniform(1,5),1000000))
+# @btime sortperm2(bb,aa) # 77.366
 #
-# @benchmark sortperm2(obs,prob) -> mean time: 1.084 sec
-# @benchmark sortperm3(obs,prob) -> mean time: 160.895 μs
+# # discrete values 10 level integers
+# bb = floor.(Int,rand(Uniform(1,11),1000000))
+# @btime sortperm2(bb,aa) # 54.325 ms
 #
+# # discrete values 10 level floats
+# bb = round.(rand(Uniform(1,10),1000000))
+# @btime sortperm2(bb,aa) # 75.698
+#
+# # discrete values 100 level integers
+# bb = floor.(Int,rand(Uniform(1,101),1000000))
+# @btime sortperm2(bb,aa) # 49.393 ms
+#
+# # discrete values 100 level floats
+# bb = round.(rand(Uniform(1,100),1000000))
+# @btime sortperm2(bb,aa) # 79.595
+#
+# # discrete values 999 level integers
+# bb = floor.(Int,rand(Uniform(1,1000),1000000))
+# @btime sortperm2(bb,aa) # 69.586 ms
+#
+# # discrete values 999 level floats
+# bb = round.(rand(Uniform(1,999),1000000))
+# @btime sortperm2(bb,aa) # 96.585
+#
+# # discrete values 10000 level integers
+# bb = floor.(Int,rand(Uniform(1,10001),1000000))
+# @btime sortperm2(bb,aa) # 105.432
+#
+# # discrete values 10000 level floats
+# bb = round.(rand(Uniform(1,10000),1000000))
+# @btime sortperm2(bb,aa) # 161.063
 
 # a = [1, 5, 1, 4, 3, 4, 4, 3, 1, 4, 5, 3, 5]
 # b = [9, 4, 0, 4, 0, 2, 1, 2, 1, 3, 2, 1, 1]

@@ -19,35 +19,40 @@ julia> hcat(a[order], b[order]
  3  1
 """
 
-using SortingAlgorithms
-
 function sortperm2(x,y;rev=false,alg=RadixSort)
 
     n = length(x)
 
     # find the number of elements from the first 100 in x
-    if n < 10000
+    if n < 1000 && !(typeof(x) <: CategoricalArray)
         nlev = length(unique(x))
     else
-        nlev = length(unique(x[1:10000]))
-        # if nlev < 1000
-        #     nlev = length(unique(x))
-        # end
+        nlev = length(unique(x[1:1000]))
+        if nlev < 100
+             nlev = length(unique(x))
+        end
     end
 
-    if nlev == 2 # binary
+    # binary
+    if nlev == 2
         return _sortperm2b(x,y;rev=rev,alg=alg)
     end
 
+    # discrete < 1000 levels
     if nlev < 1000
         return _sortperm2c(x,y;rev=rev,alg=alg)
     end
 
+    # all others
     return _sortperm2d(x,y;rev=rev) # Use QuickSort
 end
 
 # x is binary
 function _sortperm2b(x,y;rev=false,alg=RadixSort)
+    
+    function fsortperm2(idx,y;rev=false,alg=RadixSort)
+        return first.(sort(Pair.(idx,y), by=x->x.second, alg=alg, rev=rev))
+    end
 
     n = length(x)
 
@@ -110,22 +115,21 @@ function _sortperm2c(x,y;rev=false,alg=RadixSort)
     return ord
 end
 
-# other arrays
+# uint_mapping stolen from SortingAlgorithms.jl
+uint_mapping(x::Float64)  = (y = reinterpret(Int64, x); reinterpret(UInt64, ifelse(y < 0, ~y, xor(y, typemin(Int64)))))
+
+# other arrays - this is almost twice faster than the old version
 function _sortperm2d(x,y;rev=false,alg=QuickSort)
 
     # combine index, x, and y using tuples
     # A is an array of tuples
-    A = tuple.(1:length(x),x,y)
+    A = tuple.(1:length(x),uint_mapping.(x),uint_mapping.(y))
 
     # sort A by second and then third elements
     sort!(A,by=x->(x[2],x[3]),alg=alg,rev=rev)
 
     # return the first element in tuples
     return [x[1] for x in A]
-end
-
-function fsortperm2(idx,y;rev=false,alg=RadixSort)
-    return first.(sort(Pair.(idx,y), by=x->x.second, alg=alg, rev=rev))
 end
 
 

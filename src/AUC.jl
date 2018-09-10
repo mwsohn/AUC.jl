@@ -1,6 +1,7 @@
 
 module AUC
 
+using SortingAlgorithms
 
 export auc, ROC
 

@@ -1,7 +1,7 @@
 
 module AUC
 
-using SortingAlgorithms
+using SortingAlgorithms, CategoricalArrays
 
 export auc, ROC
 

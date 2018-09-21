@@ -31,7 +31,7 @@ function _binary_clf_curve(y_true, y_score)
     y_score = y_score[desc_score_indices]
     y_true = y_true[desc_score_indices]
 
-    distinct_value_indices = find(diff(y_score))
+    distinct_value_indices = findall(x->x != 0.0,diff(y_score))
     threshold_idxs = push!(distinct_value_indices, length(y_score))
 
     tps = cumsum(y_true)[threshold_idxs]
